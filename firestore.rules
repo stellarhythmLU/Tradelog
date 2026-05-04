@@ -1,0 +1,31 @@
+// ═══════════════════════════════════════════════════════════════
+// firestore.rules — Firestore 安全规则
+//
+// 部署方式：
+//   1. 安装 Firebase CLI: npm install -g firebase-tools
+//   2. firebase login
+//   3. firebase init firestore（选择你的项目）
+//   4. firebase deploy --only firestore:rules
+//
+// 或者直接在 Firebase Console 中粘贴以下规则：
+//   Firebase Console → Firestore Database → 规则 → 粘贴 → 发布
+// ═══════════════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 用户数据：只有本人能读写自己的所有数据
+    // auth.uid 是 Firebase 自动分配的唯一用户ID
+    // 未登录用户（auth == null）无法访问任何数据
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+
+    // 拒绝所有其他路径的访问
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

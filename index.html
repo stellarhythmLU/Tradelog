@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="#0f1117">
+<title>TradeLog v2.0</title>
+<link rel="stylesheet" href="css/style.css">
+<!-- PWA manifest (v2.2 预留) -->
+<!-- <link rel="manifest" href="manifest.json"> -->
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     登录页（未登录时显示）
+     ══════════════════════════════════════════════════════════ -->
+<div id="login-page" style="display:none;">
+  <div class="login-card">
+    <div class="logo-big">📈</div>
+    <h1>TradeLog</h1>
+    <p>美股交易日志 v2.0<br>
+      <span style="font-size:11px;color:var(--text3);">数据安全存储于云端 · 多设备同步</span>
+    </p>
+    <button class="login-btn" id="login-btn" onclick="handleLogin()">
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      使用 GitHub 账号登录
+    </button>
+    <div class="login-err" id="login-err"></div>
+    <div style="margin-top:20px;font-size:10px;color:var(--text3);line-height:1.7;">
+      登录即表示你的数据将安全存储于 Firebase<br>
+      仅你本人可见 · 不会分享给任何第三方
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     加载遮罩（数据加载中显示）
+     ══════════════════════════════════════════════════════════ -->
+<div id="app-loading" style="display:none;">
+  <div class="spin"></div>
+  <p>正在加载你的数据...</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     主应用外壳（登录后显示）
+     ══════════════════════════════════════════════════════════ -->
+<div id="app-shell" class="app" style="display:none;">
+
+<!-- ── 侧边栏 ── -->
+<div class="sidebar">
+  <div class="logo">
+    <h1>TradeLog</h1>
+    <p>美股交易日志 v2.0</p>
+  </div>
+  <nav class="nav">
+    <div class="ni active" onclick="nav('dashboard')"><span>📊</span>总览</div>
+    <div class="ni" onclick="nav('positions')"><span>💼</span>持仓管理</div>
+    <div class="ni" onclick="nav('trades')"><span>📋</span>交易记录</div>
+    <div class="ni" onclick="nav('analysis')"><span>🔬</span>分析 &amp; 日志</div>
+    <div class="ni" onclick="openModal('modal-settings')"><span>⚙️</span>设置 / Flex</div>
+  </nav>
+  <div class="sf">
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
+      <span id="flex-dot" class="status-dot off"></span>
+      <span id="flex-status-txt" style="font-size:10px;">Flex 未配置</span>
+    </div>
+    <div id="user-info" style="font-size:10px;color:var(--text3);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+    <span style="cursor:pointer;text-decoration:underline;" onclick="handleSignOut()">登出</span>
+    · <span id="auto-status">—</span>
+  </div>
+</div>
+
+<!-- ── 主内容区 ── -->
+<div class="main">
+
+<!-- ════════════ 总览 ════════════ -->
+<div id="page-dashboard" class="page active">
+  <div class="ph">
+    <div><div class="pt">账户总览</div><div class="ps" id="today-date"></div></div>
+    <div class="flex">
+      <button class="btn bs bsm" onclick="openModal('modal-cf')">💵 入金/出金</button>
+      <button class="btn bflex bsm" onclick="window._fetchFlexData()">🔗 Flex同步</button>
+      <button class="btn bs bsm" onclick="window._fetchAllPrices()">🔄 刷新行情</button>
+      <button class="btn bs bsm" onclick="window._fetchAllHistorical()">📈 历史行情</button>
+      <button class="btn bp bsm" onclick="window._saveSnapshot()">📸 快照</button>
+    </div>
+  </div>
+  <div id="warn-bar" class="warn-bar"></div>
+  <div id="flex-banner" class="flex-banner" style="display:none;">
+    <div class="flex-banner-info"><h3>🔗 IBKR Flex 已配置</h3><p id="flex-banner-txt">—</p></div>
+    <div style="display:flex;gap:7px;"><button class="btn bflex bsm" onclick="window._fetchFlexData()">立即同步</button><button class="btn bs bsm" onclick="openModal('modal-settings')">配置</button></div>
+  </div>
+  <div id="price-bar" class="price-bar" style="display:none;">
+    <span style="color:var(--text3);">💹 行情</span>
+    <div id="price-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    <span id="price-time" style="font-size:11px;color:var(--text3);margin-left:auto;"></span>
+  </div>
+  <div class="g4 sec">
+    <div class="card"><div class="ct" id="d-perf-lbl">业绩 · YTD</div><div class="sv" id="d-ytd">—</div><div class="ss" id="d-ytd-s">年初至今</div></div>
+    <div class="card"><div class="ct">账户净值</div><div class="sv" id="d-nav">—</div><div class="ss" id="d-nav-s">请先入金</div></div>
+    <div class="card"><div class="ct">未实现盈亏</div><div class="sv" id="d-unr">—</div><div class="ss" id="d-unr-p">—</div></div>
+    <div class="card"><div class="ct">现金 / 持仓市值</div><div class="sv" id="d-cash">—</div><div class="ss" id="d-cash-s">—</div></div>
+  </div>
+  <div class="g3 sec">
+    <div class="card"><div class="ct">胜率</div><div class="sv" id="d-wr">—</div><div class="ss" id="d-wr-s">暂无平仓</div></div>
+    <div class="card"><div class="ct">盈亏比</div><div class="sv" id="d-rr">—</div><div class="ss">平均盈 / 平均亏</div></div>
+    <div class="card"><div class="ct">已实现 + 股息利息</div><div class="sv" id="d-rl">—</div><div class="ss" id="d-rl-s">—</div></div>
+  </div>
+  <div class="sec card">
+    <div class="sh">
+      <div><div class="stl" id="chart-title">YTD 业绩走势</div><div id="chart-val" style="font-size:13px;margin-top:3px;"></div></div>
+      <div class="flex">
+        <div class="vtog">
+          <button class="vbtn active" id="cvbtn-ytdp" onclick="switchChart('ytdp')">%</button>
+          <button class="vbtn" id="cvbtn-nav" onclick="switchChart('nav')">净值</button>
+        </div>
+        <div class="vtog">
+          <button class="vbtn active" id="cvbtn-ytdr" onclick="switchRange('ytd')">YTD</button>
+          <button class="vbtn" id="cvbtn-allr" onclick="switchRange('all')">全部</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="main-chart" style="width:100%;height:170px;cursor:crosshair;"></canvas><div id="chart-tt" class="chart-tt"></div></div>
+    <div id="chart-hint" style="font-size:11px;color:var(--text3);margin-top:5px;"></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" class="sec">
+    <div class="card">
+      <div class="sh"><div class="stl">💵 入金 / 出金</div><button class="btn bs bsm" onclick="openModal('modal-cf')">+ 新增</button></div>
+      <div id="cf-list-dash"></div>
+      <div style="margin-top:8px;font-size:11px;color:var(--text3);">仅显示最新10条 · <span class="tk" onclick="nav('trades');window._trTab2(document.querySelector('#page-trades .tab:nth-child(2)'),'tr-cf')">查看全部</span></div>
+    </div>
+    <div class="card">
+      <div class="sh">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="stl">历史快照</div>
+          <div class="vtog" style="padding:2px;">
+            <button class="vbtn active" id="snap-mode-saved" onclick="window._setSnapMode('saved')" style="padding:2px 8px;font-size:10px;">📸 已保存</button>
+            <button class="vbtn" id="snap-mode-auto" onclick="window._setSnapMode('auto')" style="padding:2px 8px;font-size:10px;">🔍 历史重算</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <button class="btn bs bsm" onclick="window._snapCalNav(-1)">‹</button>
+          <span id="snap-cal-lbl" style="font-size:12px;font-weight:700;"></span>
+          <button class="btn bs bsm" onclick="window._snapCalNav(1)">›</button>
+        </div>
+      </div>
+      <div class="chr"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+      <div class="cg" id="snap-cal"></div>
+      <div id="snap-hint" style="font-size:10px;color:var(--text3);margin-top:6px;"></div>
+    </div>
+  </div>
+  <div class="sec card">
+    <div class="sh"><div class="stl">最近交易</div><button class="btn bs bsm" onclick="nav('trades')">全部</button></div>
+    <div class="tw"><table><thead><tr><th>日期时间</th><th>股票</th><th>方向</th><th>数量</th><th>价格</th><th>金额</th><th>来源</th></tr></thead><tbody id="d-recent"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ════════════ 持仓管理 ════════════ -->
+<div id="page-positions" class="page">
+  <div class="ph">
+    <div><div class="pt">持仓管理</div></div>
+    <div class="flex">
+      <button class="btn bflex" onclick="window._fetchFlexData()">🔗 Flex同步</button>
+      <button class="btn bs" onclick="window._fetchAllPrices()">🔄 刷新行情</button>
+      <button class="btn bs" onclick="window._fetchAllHistorical()">📈 历史行情</button>
+      <button class="btn bp" onclick="openModal('modal-trade')">+ 新增</button>
+    </div>
+  </div>
+  <div class="sec card">
+    <div class="tw"><table>
+      <thead><tr><th>股票</th><th>持股数</th><th>加权均价¹</th><th>摊薄均价²</th><th>当前价</th><th>持仓成本</th><th>持仓市值</th><th>组合占比</th><th>未实现盈亏</th><th>盈亏%</th><th>已实现盈亏</th><th>操作</th></tr></thead>
+      <tbody id="pos-table"></tbody>
+    </table></div>
+    <div style="margin-top:7px;font-size:11px;color:var(--text3);">¹加权均价=买入加权平均（盈亏计算用） ²摊薄均价=(买入总额-卖出总额)÷持仓数（保本参考价）</div>
+  </div>
+  <div class="sec card">
+    <div class="sh"><div class="stl">投资组合分布 <span style="font-size:11px;font-weight:400;color:var(--text3);">含账户现金 · 拖动柱状条可排序 / 拖入板块可分配</span></div></div>
+    <div style="display:grid;grid-template-columns:52% 48%;gap:14px;align-items:center;">
+      <div id="port-bar"></div>
+      <canvas id="port-pie" style="width:100%;height:220px;"></canvas>
+    </div>
+  </div>
+  <div class="sec card" id="sector-plan-card">
+    <div class="sh">
+      <div class="stl">📐 计划投资分配</div>
+      <button class="btn bs bsm" onclick="openSectorEditor()">✏️ 编辑板块</button>
+    </div>
+    <div id="sector-plan-content"></div>
+  </div>
+</div>
+
+<!-- ════════════ 交易记录 ════════════ -->
+<div id="page-trades" class="page">
+  <div class="ph">
+    <div><div class="pt">交易记录</div></div>
+    <div class="flex" id="trades-actions">
+      <button class="btn bs" onclick="document.getElementById('trade-csv-up').click()">📂 导入CSV</button>
+      <input type="file" id="trade-csv-up" accept=".csv" style="display:none" onchange="window._importTradeCSV(this)">
+      <button class="btn bp" onclick="openModal('modal-trade')">+ 新增</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="window._trTab2(this,'tr-detail')">📋 交易明细</div>
+    <div class="tab" onclick="window._trTab2(this,'tr-cf')">💵 资金流水</div>
+    <div class="tab" onclick="window._trTab2(this,'tr-closed')">📁 已平仓归档</div>
+  </div>
+
+  <!-- 交易明细 -->
+  <div id="tr-detail"><div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <input id="tf-tick" placeholder="股票代码..." style="width:110px;" oninput="renderTrades()">
+      <select id="tf-dir" onchange="renderTrades()"><option value="">全部方向</option><option value="BUY">买入</option><option value="SELL">卖出</option><option value="SHORT">买空</option><option value="COVER">回补</option></select>
+      <input type="date" id="tf-from" onchange="renderTrades()" style="width:140px;">
+      <span style="font-size:12px;color:var(--text3);">至</span>
+      <input type="date" id="tf-to" onchange="renderTrades()" style="width:140px;">
+      <button class="btn bs bsm" onclick="document.getElementById('tf-from').value='';document.getElementById('tf-to').value='';renderTrades();">清除</button>
+      <select id="tf-source" onchange="renderTrades()" style="width:100px;"><option value="">全部来源</option><option value="flex">Flex</option><option value="csv">CSV</option><option value="manual">手动</option></select>
+      <div id="batch-bar" style="display:none;align-items:center;gap:7px;margin-left:auto;">
+        <span id="sel-cnt"></span>
+        <button class="btn bd bsm" onclick="window._batchDel()">🗑️ 删除选中</button>
+      </div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th><input type="checkbox" id="sel-all" onchange="window._selAll(this)"></th><th>日期时间</th><th>股票</th><th>方向</th><th>数量</th><th>价格</th><th>手续费</th><th>金额</th><th>来源</th><th>备注</th><th></th></tr></thead>
+      <tbody id="tr-table"></tbody>
+    </table></div>
+  </div></div>
+
+  <!-- 资金流水 -->
+  <div id="tr-cf" style="display:none;"><div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <select id="cf-filter-type" onchange="renderCFPage()"><option value="">全部类型</option><option value="DEP">入金</option><option value="WTH">出金</option><option value="DIV">股息</option><option value="INT">利息</option><option value="TAX">预扣税</option><option value="FEE">费用</option></select>
+      <div id="cf-batch-bar" style="display:none;align-items:center;gap:6px;margin-left:auto;">
+        <span id="cf-batch-cnt"></span>
+        <button class="btn bd bsm" onclick="window._batchDeleteCF()">🗑️ 删除选中</button>
+      </div>
+      <button class="btn bs bsm" style="margin-left:auto;" onclick="document.getElementById('cf-csv-up2').click()">📂 导入资金CSV</button>
+      <input type="file" id="cf-csv-up2" accept=".csv" style="display:none" onchange="window._importCFCSV(this)">
+      <button class="btn bs bsm" onclick="document.getElementById('flex-xml-up').click()">📂 导入Flex XML</button>
+      <input type="file" id="flex-xml-up" accept=".xml" style="display:none" onchange="window._handleFlexXMLUpload(this)">
+      <button class="btn bs bsm" onclick="openModal('modal-cf')">+ 手动新增</button>
+    </div>
+    <div id="cf-page-summary" class="cf-sum"></div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:11px;color:var(--text2);">
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="cf-sel-all" onchange="window._cfSelAll(this)"> 全选</label>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th></th><th>日期</th><th>类型</th><th>金额</th><th>来源</th><th>备注</th><th></th></tr></thead>
+      <tbody id="cf-page-table"></tbody>
+    </table></div>
+  </div></div>
+
+  <!-- 已平仓归档 -->
+  <div id="tr-closed" style="display:none;"><div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text2);">排序：
+      <button class="btn bs bsm" onclick="window._sortClosed('ticker')">名称</button>
+      <button class="btn bs bsm" onclick="window._sortClosed('realPnL')">盈亏</button>
+      <button class="btn bs bsm" onclick="window._sortClosed('roi')">回报率</button>
+      <button class="btn bs bsm" onclick="window._sortClosed('lastSell')">平仓日期</button>
+      <span id="sort-ind" style="color:var(--accent);"></span>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>股票</th><th>首次买入</th><th>最终平仓</th><th>买入股数</th><th>卖出股数</th><th>成本总额</th><th>收回总额</th><th>已实现盈亏</th><th>回报率</th><th>操作</th></tr></thead>
+      <tbody id="closed-table"></tbody>
+    </table></div>
+  </div></div>
+</div>
+
+<!-- ════════════ 分析 & 日志 ════════════ -->
+<div id="page-analysis" class="page">
+  <div class="ph">
+    <div><div class="pt">分析 &amp; 日志</div></div>
+    <div class="flex" id="aj-actions">
+      <button class="btn bp bsm" id="aj-add-btn" onclick="openModal('modal-addstock')">+ 添加股票</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:285px 1fr;gap:16px;align-items:start;">
+    <!-- 左侧：共享日历 + Tab -->
+    <div class="card" style="padding:13px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <button class="btn bs bsm" onclick="window._sharedCalNav(-1)">‹</button>
+        <span id="shared-cal-lbl" style="font-weight:700;font-size:13px;"></span>
+        <button class="btn bs bsm" onclick="window._sharedCalNav(1)">›</button>
+      </div>
+      <div class="chr"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+      <div class="cg" id="shared-cal"></div>
+      <div style="margin-top:8px;display:flex;gap:10px;font-size:10px;color:var(--text3);">
+        <span>🔵 日志</span><span>🟡 分析</span>
+      </div>
+      <hr style="margin:10px 0;">
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <div id="aj-tab-stock" class="ni active" onclick="window._setAJView('stock')" style="padding:7px 10px;"><span>📈</span>个股分析</div>
+        <div id="aj-tab-scan" class="ni" onclick="window._setAJView('scan')" style="padding:7px 10px;"><span>📊</span>扫股</div>
+        <div id="aj-tab-journal" class="ni" onclick="window._setAJView('journal')" style="padding:7px 10px;"><span>📔</span>日志</div>
+      </div>
+      <div id="j-recent-panel" style="display:none;margin-top:10px;">
+        <hr style="margin:8px 0;"><div class="ct">最近日志</div><div id="j-recent"></div>
+      </div>
+    </div>
+
+    <!-- 右侧：内容区 -->
+    <div id="aj-content">
+      <div id="av-stock">
+        <div id="acc-list"><div class="card"><div class="empty"><div class="ei">🔬</div><div>点击「+ 添加股票」开始跟踪<br><span style="font-size:11px;margin-top:4px;display:block;">点击日历日期切换分析日期</span></div></div></div></div>
+      </div>
+      <div id="av-scan" style="display:none;"><div class="card">
+        <div style="margin-bottom:12px;font-size:13px;color:var(--text2);">扫股日期：<b id="scan-date-lbl" style="color:var(--text);"></b></div>
+        <div class="tw"><div id="scan-wrap"></div></div>
+      </div></div>
+      <div id="av-journal" style="display:none;">
+        <div id="j-viewer"><div class="card"><div class="empty"><div class="ei">📔</div><div>点击左侧日历日期查看日志</div></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .main -->
+</div><!-- end #app-shell -->
+
+<!-- ══════════════════════════════════════════════════════════
+     Lightbox
+     ══════════════════════════════════════════════════════════ -->
+<div id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src="" alt=""></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Toast
+     ══════════════════════════════════════════════════════════ -->
+<div id="toast" class="toast"></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODALS
+     ══════════════════════════════════════════════════════════ -->
+
+<!-- 设置 / Flex -->
+<div class="overlay" id="modal-settings">
+  <div class="modal" style="width:640px;">
+    <h2>⚙️ 设置 &amp; IBKR Flex Query</h2>
+    <div class="tabs" id="stabs">
+      <div class="tab active" onclick="window._sTab(this,'st-flex')">🔗 Flex Query</div>
+      <div class="tab" onclick="window._sTab(this,'st-guide')">📖 配置指南</div>
+      <div class="tab" onclick="window._sTab(this,'st-manual')">📂 手动导入</div>
+    </div>
+    <div id="st-flex">
+      <div class="settings-section">
+        <h3>Flex Web Service 凭证</h3>
+        <div class="fg"><label>Flex Token</label><input type="password" id="set-token" placeholder="纯数字，约15位" style="font-family:monospace;"><div style="font-size:11px;color:var(--text3);margin-top:3px;">存储于 Firebase，仅你本人可见</div></div>
+        <div class="fg"><label>Query ID</label><input type="text" id="set-queryid" placeholder="例如：123456" style="font-family:monospace;"></div>
+        <div class="fg"><label>自动同步间隔</label><select id="set-autosync"><option value="0">关闭</option><option value="30">每30分钟</option><option value="60">每1小时</option><option value="240">每4小时</option></select></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn bp" onclick="window._saveSettings()">💾 保存</button>
+          <button class="btn bflex" onclick="window._saveSettings();window._fetchFlexData()">💾 保存并同步</button>
+        </div>
+      </div>
+      <hr>
+      <div class="settings-section"><h3>同步日志</h3><div id="flex-sync-log" class="flex-log">等待同步...</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">上次同步: <span id="last-sync-time">—</span></div></div>
+      <hr>
+      <div class="settings-section"><h3>数据管理</h3><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn bd bsm" onclick="window._clearFlexData()">🗑️ 清除Flex数据</button><button class="btn bd bsm" onclick="window._clearAllData()">⚠️ 清除全部数据</button></div></div>
+    </div>
+    <div id="st-guide" style="display:none;">
+      <div style="font-size:13px;line-height:1.8;">
+        <div style="background:var(--green)11;border:1px solid var(--green)33;border-radius:8px;padding:11px;margin-bottom:14px;font-size:12px;"><b style="color:var(--green);">🔒 安全架构：</b> 浏览器 → 本机 127.0.0.1:3000（tradelog-proxy.js）→ IBKR<br>Token 全程不经任何第三方服务器</div>
+        <div class="flex-steps">
+          <div class="flex-step"><div class="flex-step-num">1</div><div class="flex-step-content"><b>安装 Node.js</b><p>nodejs.org 下载 LTS 版本</p></div></div>
+          <div class="flex-step"><div class="flex-step-num">2</div><div class="flex-step-content"><b>启动本地代理</b><p><code style="background:var(--bg4);padding:2px 7px;border-radius:4px;">node tradelog-proxy.js</code>（保持终端运行）</p></div></div>
+          <div class="flex-step"><div class="flex-step-num">3</div><div class="flex-step-content"><b>IBKR 创建 Flex Token</b><p>Account Management → Settings → API → Flex Web Service</p></div></div>
+          <div class="flex-step"><div class="flex-step-num">4</div><div class="flex-step-content"><b>创建 Activity Flex Query</b><p>Reports → Flex Queries → + → Activity Flex Query<br>三个 Section：Trades / Cash Transactions / Open Positions<br>全局：Date Range = From Inception，Output = XML</p></div></div>
+          <div class="flex-step"><div class="flex-step-num">5</div><div class="flex-step-content"><b>填入 Token + Query ID，保存并同步</b></div></div>
+        </div>
+      </div>
+    </div>
+    <div id="st-manual" style="display:none;">
+      <div class="settings-section"><h3>手动上传 Flex XML</h3>
+        <div class="ua" onclick="document.getElementById('flex-xml-up2').click()" style="padding:18px;">📂 点击上传 IBKR Flex Query XML 文件<input type="file" id="flex-xml-up2" accept=".xml" style="display:none" onchange="window._handleFlexXMLUpload(this)"><div style="font-size:11px;margin-top:5px;">无需启动本地代理</div></div>
+      </div>
+      <hr>
+      <div class="settings-section"><h3>手动导入 CSV</h3><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn bs" onclick="document.getElementById('tcsv2').click()">📂 交易 CSV</button><input type="file" id="tcsv2" accept=".csv" style="display:none" onchange="window._importTradeCSV(this)"><button class="btn bs" onclick="openModal('modal-cf')">💵 资金入口</button></div></div>
+    </div>
+    <div class="mf"><button class="btn bs" onclick="closeModal('modal-settings')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 入金/出金 -->
+<div class="overlay" id="modal-cf">
+  <div class="modal"><h2>💵 资金管理</h2>
+    <div class="fr">
+      <div class="fg"><label>类型</label><select id="cf-type"><option value="DEP">入金</option><option value="WTH">出金</option><option value="DIV">股息</option><option value="INT">利息</option><option value="TAX">预扣税</option><option value="FEE">费用</option></select></div>
+      <div class="fg"><label>金额 (USD)</label><input type="number" id="cf-amt" placeholder="10000" step="0.01"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>日期</label><input type="date" id="cf-date"></div>
+      <div class="fg"><label>时间</label><input type="time" id="cf-time" step="1" value="09:00:00"></div>
+    </div>
+    <div class="fg"><label>备注</label><textarea id="cf-note" style="min-height:50px;"></textarea></div>
+    <hr>
+    <div><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;">导入 IBKR Transaction History CSV：</div>
+      <button class="btn bs bsm" onclick="document.getElementById('cf-csv-up').click()">📂 导入资金流水 CSV</button>
+      <input type="file" id="cf-csv-up" accept=".csv" style="display:none" onchange="window._importCFCSV(this)">
+    </div>
+    <div class="mf"><button class="btn bs" onclick="closeModal('modal-cf')">取消</button><button class="btn bp" onclick="window._saveCF()">保存</button></div>
+  </div>
+</div>
+
+<!-- 新增交易 -->
+<div class="overlay" id="modal-trade">
+  <div class="modal"><h2>📋 新增交易</h2>
+    <div id="trade-err" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none;"></div>
+    <div class="fr"><div class="fg"><label>股票代码</label><input type="text" id="t-tick" placeholder="AAPL" style="text-transform:uppercase"></div><div class="fg"><label>方向</label><select id="t-dir"><option value="BUY">买入</option><option value="SELL">卖出</option><option value="SHORT">买空</option><option value="COVER">回补</option></select></div></div>
+    <div class="fr"><div class="fg"><label>日期</label><input type="date" id="t-date"></div><div class="fg"><label>时间</label><input type="time" id="t-time" step="1" value="09:30:00"></div></div>
+    <div class="fr"><div class="fg"><label>数量</label><input type="number" id="t-qty" placeholder="100"></div><div class="fg"><label>价格</label><input type="number" id="t-price" step="0.01" placeholder="0.00"></div></div>
+    <div class="fg"><label>手续费</label><input type="number" id="t-fee" step="0.01" value="0"></div>
+    <div class="fg"><label>备注</label><textarea id="t-note" style="min-height:50px;"></textarea></div>
+    <div class="mf"><button class="btn bs" onclick="closeModal('modal-trade')">取消</button><button class="btn bp" onclick="window._saveTrade()">保存</button></div>
+  </div>
+</div>
+
+<!-- 添加跟踪股票 -->
+<div class="overlay" id="modal-addstock">
+  <div class="modal" style="width:360px;"><h2>+ 添加跟踪股票</h2>
+    <div class="fg"><label>股票代码</label><input type="text" id="as-tick" placeholder="NVDA" style="text-transform:uppercase"></div>
+    <div class="fg"><label>名称（可选）</label><input type="text" id="as-name" placeholder="NVIDIA Corporation"></div>
+    <div class="mf"><button class="btn bs" onclick="closeModal('modal-addstock')">取消</button><button class="btn bp" onclick="window._addStock()">添加</button></div>
+  </div>
+</div>
+
+<!-- 日志编辑 -->
+<div class="overlay" id="modal-journal">
+  <div class="modal" style="width:660px;"><h2>📔 <span id="j-ed-dt"></span></h2>
+    <div class="fg"><label>市场概述</label><textarea id="j-mkt" style="min-height:48px;"></textarea></div>
+    <div class="fg"><label>操作记录</label><textarea id="j-ops" style="min-height:58px;"></textarea></div>
+    <div class="fg"><label>心得体会</label><textarea id="j-ins" style="min-height:58px;"></textarea></div>
+    <div class="fg"><label>图片附件</label>
+      <div class="ua" onclick="document.getElementById('j-img-in').click()">📷 点击上传图片<input type="file" id="j-img-in" accept="image/*" multiple style="display:none" onchange="window._handleImgs(this)"></div>
+      <div id="j-img-pre" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
+    </div>
+    <div class="fg"><label>关联股票</label><input id="j-tags" placeholder="AAPL, NVDA（逗号分隔）"></div>
+    <div class="mf"><button class="btn bs" onclick="closeModal('modal-journal')">取消</button><button class="btn bp" onclick="window._saveJournal()">保存</button></div>
+  </div>
+</div>
+
+<!-- 股票详情 -->
+<div class="overlay" id="modal-sd">
+  <div class="modal" style="width:860px;max-width:98vw;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;"><h2 id="sd-title">股票详情</h2><button class="btn bs bsm" onclick="closeModal('modal-sd')">✕</button></div>
+    <div id="sd-concl" style="margin-bottom:12px;"></div>
+    <div class="tabs"><div class="tab active" onclick="window._sdTab(this,'sd-tr')">📋 交易历史</div><div class="tab" onclick="window._sdTab(this,'sd-an')">🔬 分析记录</div></div>
+    <div id="sd-tr"><div class="tw"><table><thead><tr><th>日期时间</th><th>方向</th><th>数量</th><th>价格</th><th>金额</th><th>手续费</th><th>来源</th><th>备注</th></tr></thead><tbody id="sd-tr-body"></tbody></table></div></div>
+    <div id="sd-an" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- 快照详情 -->
+<div class="overlay" id="modal-snap">
+  <div class="modal" style="width:780px;max-width:98vw;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;"><h2 id="snap-title">快照</h2><button class="btn bs bsm" onclick="closeModal('modal-snap')">✕</button></div>
+    <div id="snap-body"></div>
+  </div>
+</div>
+
+<!-- 板块编辑器 -->
+<div class="overlay" id="modal-sector-editor">
+  <div class="modal" style="width:520px;">
+    <h2>📐 编辑计划板块</h2>
+    <div id="sector-editor-list" style="margin-bottom:14px;"></div>
+    <hr>
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text2);">+ 添加新板块</div>
+    <div class="fr">
+      <div class="fg"><label>板块名称</label><input type="text" id="sp-name" placeholder="例如：科技" autocomplete="off"></div>
+      <div class="fg"><label>计划占比 (%)</label><input type="number" id="sp-pct" min="0.1" max="100" step="0.5" placeholder="20" autocomplete="off"></div>
+    </div>
+    <div id="sp-err" style="color:var(--red);font-size:12px;margin-bottom:8px;display:none;"></div>
+    <div class="mf">
+      <button class="btn bs" onclick="closeModal('modal-sector-editor')">关闭</button>
+      <button class="btn bp" onclick="window._addSector()">添加板块</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Firebase SDK (ES Module via CDN)
+     app.js 通过 type="module" 加载，可直接 import Firebase
+     ══════════════════════════════════════════════════════════ -->
+<script type="module">
+  import { init } from './src/app.js';
+  // renderTrades / renderCFPage 需要暴露给 HTML onchange
+  import { init as _init } from './src/app.js';
+
+  // 内部函数通过 window 暴露（已在 app.js 中完成）
+  // 启动应用
+  document.addEventListener('DOMContentLoaded', () => init());
+
+  // 暴露给 HTML 中的 oninput/onchange 属性（无法使用模块作用域）
+  window.renderTrades  = () => { /* 由 app.js 内部 renderTrades 处理，通过事件已绑定 */ };
+  window.renderCFPage  = () => { /* 同上 */ };
+</script>
+
+</body>
+</html>
