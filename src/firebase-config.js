@@ -21,12 +21,12 @@ import { getFirestore }
 
 // ↓↓↓ 将下方占位符替换为你的 Firebase 项目配置 ↓↓↓
 const firebaseConfig = {
-  apiKey:            "REPLACE_WITH_YOUR_API_KEY",
-  authDomain:        "REPLACE_WITH_YOUR_AUTH_DOMAIN",
-  projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
-  storageBucket:     "REPLACE_WITH_YOUR_STORAGE_BUCKET",
-  messagingSenderId: "REPLACE_WITH_YOUR_MESSAGING_SENDER_ID",
-  appId:             "REPLACE_WITH_YOUR_APP_ID"
+  apiKey:            "AIzaSyAr8AZqqsHXzuxPUcZPUwui7ay-aJaey4c",
+  authDomain:        "tradelog-5ec79.firebaseapp.com",
+  projectId:         "tradelog-5ec79",
+  storageBucket:     "tradelog-5ec79.firebasestorage.app",
+  messagingSenderId: "1042559378150",
+  appId:             "1:1042559378150:web:7636ef1c0e1ea2d9db9127"
 };
 // ↑↑↑ 替换到这里为止 ↑↑↑
 
