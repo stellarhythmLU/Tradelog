@@ -90,12 +90,13 @@ export async function loadAll(uid) {
     analysisData,
     journalEntries,
     // 元数据字段
-    trackStocks:     meta.trackStocks     || [],
-    prices:          meta.prices          || {},
-    lastPriceUpdate: meta.lastPriceUpdate || null,
-    flexConfig:      meta.flexConfig      || { token:'', queryId:'', autoSync:0, lastSync:null },
-    sectorPlan:      meta.sectorPlan      || [],
-    portOrder:       meta.portOrder       || []
+    trackStocks:        meta.trackStocks        || [],
+    prices:             meta.prices             || {},
+    lastPriceUpdate:    meta.lastPriceUpdate    || null,
+    flexConfig:         meta.flexConfig         || { token:'', queryId:'', autoSync:0, lastSync:null },
+    sectorPlan:         meta.sectorPlan         || [],
+    portOrder:          meta.portOrder          || [],
+    customTickerColors: meta.customTickerColors || {}
   };
 }
 
@@ -106,12 +107,13 @@ export async function loadAll(uid) {
  */
 export function saveMeta(uid, S) {
   const data = {
-    trackStocks:     S.trackStocks     || [],
-    prices:          S.prices          || {},
-    lastPriceUpdate: S.lastPriceUpdate || null,
-    flexConfig:      S.flexConfig      || {},
-    sectorPlan:      S.sectorPlan      || [],
-    portOrder:       S.portOrder       || []
+    trackStocks:        S.trackStocks        || [],
+    prices:             S.prices             || {},
+    lastPriceUpdate:    S.lastPriceUpdate    || null,
+    flexConfig:         S.flexConfig         || {},
+    sectorPlan:         S.sectorPlan         || [],
+    portOrder:          S.portOrder          || [],
+    customTickerColors: S.customTickerColors || {}
   };
   // fire-and-forget：不阻塞 UI
   return setDoc(metaRef(uid), data)
@@ -218,7 +220,61 @@ export async function clearFlexRecords(uid, trades, cashFlows) {
   ]);
 }
 
-/** 清除该用户所有数据 */
+// ─── 市场行情读取（Python 脚本写入的公共数据）──────────────────
+
+/** 读取单只股票当前价格（Python 定时写入）*/
+export async function loadMarketPrice(ticker) {
+  try {
+    const snap = await getDoc(
+      doc(db, 'marketData', 'prices', 'tickers', ticker)
+    );
+    return snap.exists() ? snap.data() : null;
+  } catch (e) { return null; }
+}
+
+/** 批量读取多只股票当前价格 */
+export async function loadMarketPrices(tickers) {
+  const results = {};
+  await Promise.all(tickers.map(async tk => {
+    const d = await loadMarketPrice(tk);
+    if (d) results[tk] = d;
+  }));
+  return results;
+}
+
+/** 读取 K 线数据（interval: '1d' | '1wk'）*/
+export async function loadKlineFromFirebase(ticker, interval) {
+  const docId = `${ticker}_${interval === '1wk' ? '1wk' : '1d'}`;
+  try {
+    const snap = await getDoc(
+      doc(db, 'marketData', 'kline', 'data', docId)
+    );
+    return snap.exists() ? snap.data() : null;
+  } catch (e) { return null; }
+}
+
+/** 读取历史收盘价（Python 写入的 HP 数据，可替代 localStorage）*/
+export async function loadHistoricalCloses(ticker) {
+  try {
+    const snap = await getDoc(
+      doc(db, 'marketData', 'historical', 'closes', ticker)
+    );
+    return snap.exists() ? snap.data() : null;
+  } catch (e) { return null; }
+}
+
+/** 读取多只股票的历史收盘价，合并进 window._HP */
+export async function syncHPFromFirebase(tickers) {
+  let synced = 0;
+  await Promise.all(tickers.map(async tk => {
+    const data = await loadHistoricalCloses(tk);
+    if (data?.closes) {
+      window._HP[tk] = { ...(window._HP[tk] || {}), ...data.closes };
+      synced++;
+    }
+  }));
+  return synced;
+}
 export async function clearAllUserData(uid) {
   // 读取所有文档 ID，然后批量删除
   const [ts, cfs, sn, an, js] = await Promise.all([

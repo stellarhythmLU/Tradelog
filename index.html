@@ -98,8 +98,8 @@
     <span id="price-time" style="font-size:11px;color:var(--text3);margin-left:auto;"></span>
   </div>
   <div class="g4 sec">
-    <div class="card"><div class="ct" id="d-perf-lbl">业绩 · YTD</div><div class="sv" id="d-ytd">—</div><div class="ss" id="d-ytd-s">年初至今</div></div>
     <div class="card"><div class="ct">账户净值</div><div class="sv" id="d-nav">—</div><div class="ss" id="d-nav-s">请先入金</div></div>
+    <div class="card"><div class="ct" id="d-perf-lbl">业绩 · YTD</div><div class="sv" id="d-ytd">—</div><div class="ss" id="d-ytd-s">年初至今</div></div>
     <div class="card"><div class="ct">未实现盈亏</div><div class="sv" id="d-unr">—</div><div class="ss" id="d-unr-p">—</div></div>
     <div class="card"><div class="ct">现金 / 持仓市值</div><div class="sv" id="d-cash">—</div><div class="ss" id="d-cash-s">—</div></div>
   </div>
@@ -179,7 +179,10 @@
     <div class="sh"><div class="stl">投资组合分布 <span style="font-size:11px;font-weight:400;color:var(--text3);">含账户现金 · 拖动柱状条可排序 / 拖入板块可分配</span></div></div>
     <div style="display:grid;grid-template-columns:52% 48%;gap:14px;align-items:center;">
       <div id="port-bar"></div>
-      <canvas id="port-pie" style="width:100%;height:220px;"></canvas>
+      <div style="display:flex;align-items:center;gap:10px;min-height:200px;">
+        <canvas id="port-pie" style="width:175px;height:175px;flex-shrink:0;"></canvas>
+        <div id="port-pie-legend" style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:5px;"></div>
+      </div>
     </div>
   </div>
   <div class="sec card" id="sector-plan-card">
@@ -330,6 +333,21 @@
 <div id="toast" class="toast"></div>
 
 <!-- ══════════════════════════════════════════════════════════
+     颜色选择器弹窗（单例，复用于持仓条和板块编辑器）
+     ══════════════════════════════════════════════════════════ -->
+<div id="color-picker-popup">
+  <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+    <span>🎨 选择颜色</span>
+    <button class="btn bs bsm" onclick="closeColorPicker()" style="padding:2px 7px;font-size:11px;">✕</button>
+  </div>
+  <div id="cp-grid" class="cp-grid"></div>
+  <div class="cp-custom-row">
+    <input type="color" id="cp-custom" title="输入自定义颜色">
+    <span style="font-size:11px;color:var(--text2);">自定义颜色</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
      MODALS
      ══════════════════════════════════════════════════════════ -->
 
@@ -443,6 +461,32 @@
 <div class="overlay" id="modal-sd">
   <div class="modal" style="width:860px;max-width:98vw;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;"><h2 id="sd-title">股票详情</h2><button class="btn bs bsm" onclick="closeModal('modal-sd')">✕</button></div>
+
+    <!-- K 线图（综合结论上方）-->
+    <div id="sd-kline" style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:13px;font-weight:700;">📊 K线图</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="vtog">
+            <button class="vbtn active" id="kbtn-D" onclick="window._switchKlinePeriod('D')">日K</button>
+            <button class="vbtn"        id="kbtn-W" onclick="window._switchKlinePeriod('W')">周K</button>
+          </div>
+          <button class="btn bs bsm" onclick="window._refreshKline()" title="强制刷新K线">↻</button>
+        </div>
+      </div>
+      <div id="kline-wrap" style="background:var(--bg3);border-radius:8px;overflow:hidden;position:relative;">
+        <div id="kline-loading" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:24px;color:var(--text3);font-size:12px;">
+          <div style="width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;"></div>
+          正在加载K线数据...
+        </div>
+        <canvas id="kline-canvas" style="width:100%;display:none;border-radius:8px;"></canvas>
+        <div id="kline-err" style="display:none;text-align:center;padding:18px;color:var(--text3);font-size:12px;"></div>
+      </div>
+      <div style="margin-top:5px;font-size:10px;color:var(--text3);display:flex;gap:14px;">
+        <span>🟢 买点（B）</span><span>🔴 卖点（S）</span><span style="color:#f5a623;">— 成本价</span>
+      </div>
+    </div>
+
     <div id="sd-concl" style="margin-bottom:12px;"></div>
     <div class="tabs"><div class="tab active" onclick="window._sdTab(this,'sd-tr')">📋 交易历史</div><div class="tab" onclick="window._sdTab(this,'sd-an')">🔬 分析记录</div></div>
     <div id="sd-tr"><div class="tw"><table><thead><tr><th>日期时间</th><th>方向</th><th>数量</th><th>价格</th><th>金额</th><th>手续费</th><th>来源</th><th>备注</th></tr></thead><tbody id="sd-tr-body"></tbody></table></div></div>
@@ -483,16 +527,7 @@
      ══════════════════════════════════════════════════════════ -->
 <script type="module">
   import { init } from './src/app.js';
-  // renderTrades / renderCFPage 需要暴露给 HTML onchange
-  import { init as _init } from './src/app.js';
-
-  // 内部函数通过 window 暴露（已在 app.js 中完成）
-  // 启动应用
   document.addEventListener('DOMContentLoaded', () => init());
-
-  // 暴露给 HTML 中的 oninput/onchange 属性（无法使用模块作用域）
-  window.renderTrades  = () => { /* 由 app.js 内部 renderTrades 处理，通过事件已绑定 */ };
-  window.renderCFPage  = () => { /* 同上 */ };
 </script>
 
 </body>

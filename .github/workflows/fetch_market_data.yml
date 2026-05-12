@@ -1,0 +1,115 @@
+name: 📊 Fetch Market Data
+
+# ═══════════════════════════════════════════════════════════════
+# 触发条件：
+#   定时：周一至周五按美股交易时间自动运行
+#   手动：可在 Actions 页面手动触发并选择模式
+#
+# 时间对照（UTC / 美东 ET，夏令时期间）：
+#   09:00 UTC = 05:00 ET  盘前开盘前（获取隔夜盘前价格）
+#   14:15 UTC = 10:15 ET  开盘后15分钟（更新开盘K线）
+#   21:15 UTC = 17:15 ET  收盘后15分钟（更新收盘K线 + 当日价格）
+#   周六 08:00 UTC         全量历史更新（含2年历史收盘价）
+# ═══════════════════════════════════════════════════════════════
+
+on:
+  schedule:
+    # 盘前：周一至周五 09:00 UTC (05:00 ET)
+    - cron: '0 9 * * 1-5'
+    # 开盘后：周一至周五 14:15 UTC (10:15 ET)
+    - cron: '15 14 * * 1-5'
+    # 收盘后：周一至周五 21:15 UTC (17:15 ET)
+    - cron: '15 21 * * 1-5'
+    # 每周全量更新：周六 08:00 UTC
+    - cron: '0 8 * * 6'
+
+  # 手动触发（可在 Actions 页面选择模式）
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '抓取模式'
+        required: false
+        default: 'kline'
+        type: choice
+        options:
+          - prices      # 仅当前价格
+          - kline       # 价格 + 日K + 周K
+          - historical  # 历史收盘价 + K线
+          - all         # 全量
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-market-data:
+    name: 📈 Fetch ${{ github.event.inputs.mode || 'auto' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 检出代码 ───────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python 环境 ────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      # ── 确定运行模式 ───────────────────────────────────────────
+      - name: Determine fetch mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手动触发：使用用户选择的模式
+            MODE="${{ github.event.inputs.mode }}"
+          else
+            # 定时触发：根据 UTC 小时判断
+            HOUR=$(date -u +%H)
+            DOW=$(date -u +%u)   # 1=Monday ... 7=Sunday
+
+            if [ "$DOW" = "6" ]; then
+              # 周六：全量历史更新
+              MODE="historical"
+            elif [ "$HOUR" = "09" ]; then
+              # 盘前：仅价格
+              MODE="prices"
+            elif [ "$HOUR" = "14" ]; then
+              # 开盘后：价格 + K线
+              MODE="kline"
+            elif [ "$HOUR" = "21" ]; then
+              # 收盘后：价格 + K线（最重要，记录当日收盘）
+              MODE="kline"
+            else
+              MODE="prices"
+            fi
+          fi
+
+          echo "mode=${MODE}" >> $GITHUB_OUTPUT
+          echo "📋 运行模式: ${MODE}"
+          echo "🕐 UTC 时间: $(date -u '+%Y-%m-%d %H:%M')"
+
+      # ── 执行抓取脚本 ───────────────────────────────────────────
+      - name: Fetch market data
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          python scripts/fetch_market_data.py ${{ steps.mode.outputs.mode }}
+
+      # ── 完成摘要 ───────────────────────────────────────────────
+      - name: Summary
+        if: always()
+        run: |
+          echo "### 📊 Market Data Fetch Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode**: \`${{ steps.mode.outputs.mode }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

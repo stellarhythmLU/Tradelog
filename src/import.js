@@ -109,7 +109,12 @@ export function parseCFCSV(text, existingHashes) {
       if (!cfType) { skip++; continue; }
       const rowHash = `L${lineNum}|${date}|${cfType}|${Math.abs(amt).toFixed(3)}`;
       if (existingHashes.has(rowHash)) { skip++; continue; }
-      newFlows.push({ id: Date.now() + Math.random(), _h: rowHash, type: cfType, amount: Math.abs(amt), date, datetime: `${date} 08:00:00`, note: (actCode || desc || '').slice(0, 60), source: 'csv' });
+      newFlows.push({
+        id: crypto.randomUUID(),
+        _h: rowHash, type: cfType, amount: Math.abs(amt),
+        date, datetime: `${date} 08:00:00`,
+        note: (actCode || desc || '').slice(0, 60), source: 'csv'
+      });
       imp++;
     }
   } else {
@@ -135,7 +140,12 @@ export function parseCFCSV(text, existingHashes) {
       const type = secType === 'DEPWTH' ? (amt > 0 ? 'DEP' : 'WTH') : secType === 'DIV' ? (amt >= 0 ? 'DIV' : 'TAX') : secType;
       const rowHash = `L${lineNum}|${date}|${type}|${Math.abs(amt).toFixed(3)}`;
       if (existingHashes.has(rowHash)) { skip++; continue; }
-      newFlows.push({ id: Date.now() + Math.random(), _h: rowHash, type, amount: Math.abs(amt), date, datetime: `${date} 08:00:00`, note: gi2('description','desc').slice(0, 60), source: 'csv' });
+      newFlows.push({
+        id: crypto.randomUUID(),
+        _h: rowHash, type, amount: Math.abs(amt),
+        date, datetime: `${date} 08:00:00`,
+        note: gi2('description','desc').slice(0, 60), source: 'csv'
+      });
       imp++;
     }
   }
@@ -143,10 +153,16 @@ export function parseCFCSV(text, existingHashes) {
 }
 
 // ─── 交易 CSV 导入 ───────────────────────────────────────────
-export function parseTradeCSV(text) {
+// existingHashes: Set<string> — 已有交易的 _h 哈希集合，用于去重
+export function parseTradeCSV(text, existingHashes = new Set()) {
   const lines = text.split(/\r?\n/);
-  const newTrades = []; let imp = 0, skip = 0, fmt = '通用';
+  const newTrades = []; let imp = 0, skip = 0, dup = 0, fmt = '通用';
+  const sessionHashes = new Set(); // 本次导入内部去重（防止同文件内重复行）
   const isIBKR = lines.some(l => l.startsWith('Statement,') || l.startsWith('Trades,Header,'));
+
+  // 生成交易哈希（与 Flex XML 格式保持一致，方便统一去重）
+  const tradeHash = (date, ticker, dir, qty, price) =>
+    `CSV|${date}|${ticker}|${dir}|${Math.abs(qty)}|${parseFloat(price).toFixed(4)}`;
 
   if (isIBKR) {
     fmt = 'IBKR'; let hdr = null;
@@ -156,16 +172,35 @@ export function parseTradeCSV(text) {
       if (cols[0] === 'Trades' && cols[1] === 'Data' && hdr) {
         const dc = cols[2]; if (!dc || dc === 'SubTotal' || dc === 'Total') continue;
         const g = k => { const idx = hdr.indexOf(k); return idx >= 0 ? (cols[idx] || '').trim() : null; };
-        const sym = g('Symbol'), dtRaw = g('Date/Time'), qStr = g('Quantity'), prStr = g('T. Price') || g('Price'), fStr = g('Comm/Fee');
-        const asset = g('Asset Category');
+        const sym    = g('Symbol');
+        const dtRaw  = g('Date/Time');
+        const qStr   = g('Quantity');
+        const prStr  = g('T. Price') || g('Price');
+        const fStr   = g('Comm/Fee');
+        const asset  = g('Asset Category');
         if (asset && !['Stocks','STK',''].includes(asset)) { skip++; continue; }
         if (!sym || !dtRaw || qStr === null || !prStr) { skip++; continue; }
         const dtClean = dtRaw.replace(/"/g, '').split(',');
         const date = dtClean[0].trim(), time = (dtClean[1] || '').trim() || '09:30:00';
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { skip++; continue; }
-        const rawQ = parseFloat(qStr.replace(/,/g,'')), price = parseFloat(prStr.replace(/,/g,'')), fee = Math.abs(parseFloat((fStr||'0').replace(/,/g,'')));
+        const rawQ  = parseFloat(qStr.replace(/,/g, ''));
+        const price = parseFloat(prStr.replace(/,/g, ''));
+        const fee   = Math.abs(parseFloat((fStr || '0').replace(/,/g, '')));
         if (isNaN(rawQ) || isNaN(price) || rawQ === 0) { skip++; continue; }
-        newTrades.push({ id: Date.now() + Math.random(), ticker: sym.replace(/\s+/g,'').toUpperCase(), date, datetime: `${date} ${time}`, dir: rawQ > 0 ? 'BUY' : 'SELL', qty: Math.abs(rawQ), price, fee, note: 'IBKR导入', source: 'csv' });
+        const ticker = sym.replace(/\s+/g, '').toUpperCase();
+        const dir    = rawQ > 0 ? 'BUY' : 'SELL';
+        const qty    = Math.abs(rawQ);
+        const h      = tradeHash(date, ticker, dir, qty, price);
+        // 跳过已存在或本次重复
+        if (existingHashes.has(h) || sessionHashes.has(h)) { dup++; continue; }
+        sessionHashes.add(h);
+        newTrades.push({
+          id: crypto.randomUUID(),
+          _h: h,
+          ticker, date, datetime: `${date} ${time}`,
+          dir, qty, price, fee,
+          note: 'IBKR导入', source: 'csv'
+        });
         imp++;
       }
     }
@@ -176,11 +211,25 @@ export function parseTradeCSV(text) {
       const [date, ticker, dir, qty, price, fee, ...np] = c;
       if (!ticker || !qty || !price) return;
       const dm = { 'buy':'BUY','sell':'SELL','short':'SHORT','cover':'COVER','买入':'BUY','卖出':'SELL' };
-      newTrades.push({ id: Date.now() + Math.random(), ticker: ticker.toUpperCase(), date, datetime: date + ' 09:30:00', dir: dm[dir?.toLowerCase()] || 'BUY', qty: Math.abs(parseFloat(qty)), price: parseFloat(price), fee: parseFloat(fee) || 0, note: np.join(','), source: 'csv' });
+      const normDir    = dm[dir?.toLowerCase()] || 'BUY';
+      const normTicker = ticker.toUpperCase();
+      const normQty    = Math.abs(parseFloat(qty));
+      const normPrice  = parseFloat(price);
+      const h = tradeHash(date, normTicker, normDir, normQty, normPrice);
+      if (existingHashes.has(h) || sessionHashes.has(h)) { dup++; return; }
+      sessionHashes.add(h);
+      newTrades.push({
+        id: crypto.randomUUID(),
+        _h: h,
+        ticker: normTicker, date, datetime: date + ' 09:30:00',
+        dir: normDir, qty: normQty, price: normPrice,
+        fee: parseFloat(fee) || 0,
+        note: np.join(','), source: 'csv'
+      });
       imp++;
     });
   }
-  return { newTrades, imp, skip, fmt };
+  return { newTrades, imp, skip, dup, fmt };
 }
 
 // ─── Flex XML 解析 ──────────────────────────────────────────
@@ -210,7 +259,11 @@ export function parseFlexXML(xmlText, existingTradeHashes, existingCFHashes) {
     const qty = Math.abs(qtyRaw);
     const rowHash = `FLEX|${date}|${sym}|${dir}|${qty}|${price.toFixed(4)}`;
     if (existingTradeHashes.has(rowHash)) { skipT++; return; }
-    newTrades.push({ id: Date.now() + Math.random(), _h: rowHash, ticker: sym, date, datetime: `${date} ${time}`, dir, qty, price, fee, note: 'IBKR Flex', source: 'flex' });
+    newTrades.push({
+      id: crypto.randomUUID(),
+      _h: rowHash, ticker: sym, date, datetime: `${date} ${time}`,
+      dir, qty, price, fee, note: 'IBKR Flex', source: 'flex'
+    });
   });
 
   doc.querySelectorAll('CashTransaction').forEach(ct => {
@@ -228,7 +281,11 @@ export function parseFlexXML(xmlText, existingTradeHashes, existingCFHashes) {
     if (!cfType) { skipCF++; return; }
     const rowHash = actionId ? `FLEXCF|AID:${actionId}|${cfType}` : `FLEXCF|${date}|${cfType}|${Math.abs(amt).toFixed(3)}|${desc.slice(0,15)}`;
     if (existingCFHashes.has(rowHash)) { skipCF++; return; }
-    newFlows.push({ id: Date.now() + Math.random(), _h: rowHash, type: cfType, amount: Math.abs(amt), date, datetime: `${date} 08:00:00`, note: desc.slice(0, 60), source: 'flex' });
+    newFlows.push({
+      id: crypto.randomUUID(),
+      _h: rowHash, type: cfType, amount: Math.abs(amt),
+      date, datetime: `${date} 08:00:00`, note: desc.slice(0, 60), source: 'flex'
+    });
   });
 
   doc.querySelectorAll('OpenPosition').forEach(op => {

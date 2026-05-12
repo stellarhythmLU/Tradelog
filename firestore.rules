@@ -15,15 +15,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 用户数据：只有本人能读写自己的所有数据
-    // auth.uid 是 Firebase 自动分配的唯一用户ID
-    // 未登录用户（auth == null）无法访问任何数据
+    // ── 用户私人数据（只有本人可读写）────────────────────────────
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null
                          && request.auth.uid == userId;
     }
 
-    // 拒绝所有其他路径的访问
+    // ── 市场行情数据（Python 脚本写入，登录用户可读）─────────────
+    // 股票价格、K线、历史收盘价均为公开市场信息，不含个人隐私
+    // 写入权限：仅 Firebase Admin SDK（Python 脚本）可写，前端不可写
+    match /marketData/{document=**} {
+      allow read:  if request.auth != null;
+      allow write: if false;   // 仅 Admin SDK（服务账号）可写
+    }
+
+    // ── 拒绝所有其他路径 ─────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

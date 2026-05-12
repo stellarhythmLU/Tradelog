@@ -237,3 +237,57 @@ hr{border:none;border-top:1px solid var(--border);margin:11px 0;}
 #lightbox{position:fixed;inset:0;background:#000000cc;z-index:500;display:none;align-items:center;justify-content:center;cursor:zoom-out;}
 #lightbox.show{display:flex;}
 #lightbox img{max-width:92vw;max-height:90vh;border-radius:10px;object-fit:contain;box-shadow:0 8px 40px #000a;}
+
+/* ═══════════════════════════════════════════════════════════
+   颜色选择器弹窗（v2.1 新增）
+   ═══════════════════════════════════════════════════════════ */
+#color-picker-popup {
+  position: fixed;
+  z-index: 400;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px;
+  box-shadow: 0 8px 32px #0009, 0 2px 8px #0006;
+  display: none;
+  min-width: 228px;
+  user-select: none;
+}
+.cp-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  margin-bottom: 10px;
+}
+.cp-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform .12s, border-color .12s;
+  box-sizing: border-box;
+}
+.cp-swatch:hover { transform: scale(1.25); z-index: 1; }
+.cp-swatch.selected { border-color: #fff; box-shadow: 0 0 0 1px #0006 inset; }
+.cp-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.cp-custom-row input[type=color] {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  cursor: pointer;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  flex-shrink: 0;
+}
+
+/* ── K 线图区域 ──────────────────────────────────────────── */
+#kline-wrap canvas { display: block; }
+#sd-kline .vtog .vbtn { padding: 4px 12px; font-size: 12px; }
