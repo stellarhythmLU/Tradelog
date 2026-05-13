@@ -56,56 +56,117 @@ def init_firebase():
 
 def get_all_tickers(db):
     """
-    从所有用户数据中汇总需要抓取数据的股票代码。
-    读取来源：
-      · users/{uid}/config/main → prices 对象键（当前持仓）
-      · users/{uid}/config/main → trackStocks 数组（跟踪股票）
-      · users/{uid}/trades/{id} → ticker 字段（历史交易）
+    从 Firestore 汇总所有需要抓取数据的股票代码。
+
+    策略：
+      方案A（主）：枚举 users 集合 → 读每个用户的 config/main + trades
+      方案B（兜底）：collection_group 直接扫描所有 trades / config 子集合
+                     （当 users/{uid} 文档不存在时自动启用）
+
+    注意：users/{uid} 文档在用户首次登录后会被前端自动创建。
+          若文档仍不存在，方案B会直接扫描子集合作为兜底。
     """
+    import re
     tickers = set()
+
+    # ── 合法 ticker 验证（1-10位，字母开头，允许.和-）──────────
+    def is_valid_ticker(tk):
+        return bool(tk and re.match(r'^[A-Z][A-Z0-9.\-]{0,9}$', str(tk).upper()))
+
     print("📋 正在读取用户股票清单...")
 
-    # 遍历所有用户
+    # ════════════════════════════════════════════════════════════
+    # 方案 A：枚举 users/{uid} 文档（标准方式）
+    # ════════════════════════════════════════════════════════════
+    user_docs = []
     try:
-        users = list(db.collection('users').stream())
+        user_docs = list(db.collection('users').stream())
+        print(f"  [方案A] 找到 {len(user_docs)} 个用户文档")
     except Exception as e:
-        print(f"  ❌ 读取用户列表失败: {e}")
-        return []
+        print(f"  [方案A] ❌ 读取用户集合失败: {e}")
 
-    for user_doc in users:
+    for user_doc in user_docs:
         uid = user_doc.id
         try:
-            # ── config/main（持仓价格 + 跟踪股票）────────────────
-            config_ref = (db.collection('users').document(uid)
-                            .collection('config').document('main'))
-            config = config_ref.get()
+            # ── config/main（当前持仓价格 + 跟踪股票）──────────
+            config = (db.collection('users').document(uid)
+                        .collection('config').document('main').get())
             if config.exists:
                 data = config.to_dict()
-                # 当前有价格的持仓
                 for tk in data.get('prices', {}).keys():
-                    if tk and tk.isidentifier() or tk.replace('-','').isalpha():
+                    if is_valid_ticker(tk):
                         tickers.add(tk.upper())
-                # 用户手动添加的跟踪股票
                 for stock in data.get('trackStocks', []):
                     tk = stock.get('ticker', '')
-                    if tk:
+                    if is_valid_ticker(tk):
                         tickers.add(tk.upper())
 
-            # ── trades 子集合（含已平仓历史记录）───────────────────
-            trades_ref = (db.collection('users').document(uid)
-                            .collection('trades'))
-            for trade in trades_ref.stream():
+            # ── trades 子集合（含已平仓历史）──────────────────
+            for trade in (db.collection('users').document(uid)
+                            .collection('trades').stream()):
                 tk = trade.to_dict().get('ticker', '')
-                if tk:
+                if is_valid_ticker(tk):
                     tickers.add(tk.upper())
 
         except Exception as e:
-            print(f"  ⚠️ 读取用户 {uid[:8]}... 数据失败: {e}")
+            print(f"  [方案A] ⚠️ 读取用户 {uid[:8]}... 失败: {e}")
 
-    # 过滤掉明显无效的代码
-    valid = {t for t in tickers if t and 1 <= len(t) <= 10 and t.replace('.','').replace('-','').isalpha()}
-    print(f"  共找到 {len(valid)} 个有效股票代码: {', '.join(sorted(valid))}")
-    return sorted(valid)
+    # ════════════════════════════════════════════════════════════
+    # 方案 B：collection_group 兜底扫描
+    # （当方案A找不到数据时触发，无需额外索引）
+    # ════════════════════════════════════════════════════════════
+    if not tickers:
+        print("  [方案B] 方案A未找到数据，启用 collection_group 扫描...")
+
+        # 扫描所有 trades 子集合
+        try:
+            trade_count = 0
+            for trade in db.collection_group('trades').stream():
+                tk = trade.to_dict().get('ticker', '')
+                if is_valid_ticker(tk):
+                    tickers.add(tk.upper())
+                    trade_count += 1
+            print(f"  [方案B] trades: 扫描到 {trade_count} 条记录")
+        except Exception as e:
+            print(f"  [方案B] ⚠️ trades 扫描失败: {e}")
+            print(f"           原因可能是 Firestore 需要索引，请在 Firebase Console")
+            print(f"           → Firestore → 索引 → 单字段 → 为 'trades' 集合组添加索引")
+
+        # 扫描所有 config 子集合（取 id='main' 的文档）
+        try:
+            for config_doc in db.collection_group('config').stream():
+                if config_doc.id == 'main':
+                    data = config_doc.to_dict()
+                    for tk in data.get('prices', {}).keys():
+                        if is_valid_ticker(tk):
+                            tickers.add(tk.upper())
+                    for stock in data.get('trackStocks', []):
+                        tk = stock.get('ticker', '')
+                        if is_valid_ticker(tk):
+                            tickers.add(tk.upper())
+            print(f"  [方案B] config: 扫描完成")
+        except Exception as e:
+            print(f"  [方案B] ⚠️ config 扫描失败: {e}")
+
+    # ════════════════════════════════════════════════════════════
+    # 结果汇总
+    # ════════════════════════════════════════════════════════════
+    valid = sorted(tickers)
+
+    if not valid:
+        print()
+        print("  ⚠️  未找到股票代码，可能原因：")
+        print("  1. 尚未登录 TradeLog 网页（需先登录一次让前端创建用户文档）")
+        print("  2. 尚未在 TradeLog 中导入任何交易记录")
+        print("  3. Firestore 规则阻止了 Admin SDK 读取（检查 firestore.rules）")
+        print()
+        print("  解决方法：")
+        print("  → 打开 TradeLog 网站并登录，网页会自动在 Firestore 中创建")
+        print("    users/{uid} 文档。完成后重新运行此脚本即可。")
+    else:
+        print(f"  ✅ 共找到 {len(valid)} 个股票代码: {', '.join(valid)}")
+
+    return valid
 
 
 # ════════════════════════════════════════════════════════════════
