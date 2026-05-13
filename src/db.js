@@ -28,6 +28,7 @@ import {
 import { db } from './firebase-config.js';
 
 // ─── 路径工具 ─────────────────────────────────────────────────
+const userRef  = uid => doc(db, 'users', uid);           // ← 用户根文档
 const metaRef  = uid => doc(db, 'users', uid, 'config', 'main');
 const tradeRef = (uid, id) => doc(db, 'users', uid, 'trades', String(id));
 const cfRef    = (uid, id) => doc(db, 'users', uid, 'cashFlows', String(id));
@@ -41,6 +42,13 @@ const snapCol  = uid => collection(db, 'users', uid, 'snapshots');
 const anCol    = uid => collection(db, 'users', uid, 'analysis');
 const jCol     = uid => collection(db, 'users', uid, 'journal');
 
+// ─── 确保 users/{uid} 文档存在（Python 脚本枚举用户需要它）─────
+// 使用 merge:true，不覆盖已有字段
+function ensureUserDoc(uid) {
+  setDoc(userRef(uid), { uid, _exists: true }, { merge: true })
+    .catch(() => {});
+}
+
 // ─── 加载全部数据（登录后调用一次）──────────────────────────────
 /**
  * 从 Firestore 加载用户全部数据，返回 S 兼容的对象
@@ -48,6 +56,9 @@ const jCol     = uid => collection(db, 'users', uid, 'journal');
  * @returns {Promise<Object>}
  */
 export async function loadAll(uid) {
+  // 确保 users/{uid} 文档存在，供 Python 脚本枚举用户
+  ensureUserDoc(uid);
+
   const [
     metaSnap,
     tradeSnaps,
@@ -106,6 +117,8 @@ export async function loadAll(uid) {
  * 包括：trackStocks, prices, lastPriceUpdate, flexConfig, sectorPlan, portOrder
  */
 export function saveMeta(uid, S) {
+  // 确保 users/{uid} 文档存在
+  ensureUserDoc(uid);
   const data = {
     trackStocks:        S.trackStocks        || [],
     prices:             S.prices             || {},
